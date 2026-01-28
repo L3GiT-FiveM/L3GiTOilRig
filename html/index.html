@@ -17,8 +17,8 @@
       <div class="terminal-stack" aria-label="Terminal panels">
       <div class="contract-panel" aria-label="Work order panel">
         <div class="header-text">
-          <div class="header-kicker">Field Terminal</div>
-          <h1>Playground Oil Rig</h1>
+          <div class="header-kicker" id="ui-kicker">Field Terminal</div>
+          <h1 id="ui-title">Playground Oil Rig</h1>
           <span class="subtitle" id="ui-subtitle">Restricted Field Terminal</span>
         </div>
 
@@ -98,7 +98,15 @@
               <div id="progress-fill" class="progress-fill"></div>
               <div id="progress-marker" class="progress-marker"></div>
             </div>
-            <div id="rig-tsunami-note" class="footer-note rig-tsunami-note"><span class="rig-note-label">NOTE:</span> Active state won't be remembered after a tsunami.</div>
+          </div>
+
+          <div class="footer-note rig-info-note" aria-label="Info">
+            <span class="info-ico" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M11 7h2v2h-2V7zm0 4h2v6h-2v-6zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16z"/>
+              </svg>
+            </span>
+            <span id="rig-info-text">All progress is saved after tsunami.</span>
           </div>
         </div>
       </div>
@@ -144,9 +152,9 @@
       <div class="supplier-stack" aria-label="Fuel supplier panels">
         <div class="contract-panel" aria-label="Fuel supplier panel">
           <div class="header-text">
-            <div class="header-kicker">Operations</div>
-            <h1>Playground Oil Rig</h1>
-            <span class="subtitle">Fuel Supplier</span>
+            <div class="header-kicker" id="supplier-kicker">Operations</div>
+            <h1 id="supplier-title">Playground Oil Rig</h1>
+            <span class="subtitle" id="supplier-subtitle">Fuel Supplier</span>
           </div>
 
           <div class="contract-body">
@@ -218,9 +226,9 @@
       <div class="supplier-stack" aria-label="Oil buyer panels">
         <div class="contract-panel" aria-label="Oil buyer panel">
           <div class="header-text">
-            <div class="header-kicker">Operations</div>
-            <h1>Playground Oil Rig</h1>
-            <span class="subtitle">Oil Buyer</span>
+            <div class="header-kicker" id="buyer-kicker">Operations</div>
+            <h1 id="buyer-title">Playground Oil Rig</h1>
+            <span class="subtitle" id="buyer-subtitle">Oil Buyer</span>
           </div>
 
           <div class="contract-body">

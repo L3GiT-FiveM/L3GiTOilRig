@@ -6,7 +6,21 @@ local lastUiShownAt = 0
 local fuelingInProgress = false
 local fuelingEndsAt = 0
 
-local JOB_NAME = 'Playground Oil Rig'
+local function dbg(fmt, ...)
+    if not (Config and Config.Debug) then return end
+
+    local ok, msg
+    if select('#', ...) > 0 then
+        ok, msg = pcall(string.format, fmt, ...)
+    else
+        ok, msg = true, tostring(fmt)
+    end
+
+    if not ok then msg = tostring(fmt) end
+    print(('[L3GiTOilRig][DEBUG] %s'):format(tostring(msg)))
+end
+
+local JOB_NAME = (Config and Config.JobName) or 'Playground Oil Rig'
 local JOB_BLIP_COLOR = 5
 
 local rigBlips = {}
@@ -29,6 +43,7 @@ local function getPlayerFuelCount()
     end)
 
     if not ok then
+        dbg('getPlayerFuelCount: ox_inventory Search failed')
         return 0
     end
 
@@ -45,6 +60,7 @@ local function getPlayerBarrelCount()
     end)
 
     if not ok then
+        dbg('getPlayerBarrelCount: ox_inventory Search failed')
         return 0
     end
 
@@ -52,6 +68,7 @@ local function getPlayerBarrelCount()
 end
 
 local function openFuelSupplierUI()
+    dbg('openFuelSupplierUI')
     -- Close rig UI if open.
     if currentRigId ~= nil then
         SendNUIMessage({ action = 'hideRigUI' })
@@ -61,18 +78,23 @@ local function openFuelSupplierUI()
     end
 
     local currentFuel = getPlayerFuelCount()
+    dbg('FuelSupplier currentFuel=%s', tostring(currentFuel))
     SendNUIMessage({
         action = 'showSupplierUI',
         config = {
             fuelCost = Config.FuelCost or 0,
             currentFuel = currentFuel or 0,
-            maxHold = 9
+            maxHold = 9,
+            uiKicker = (Config.Ui and Config.Ui.opsKicker) or 'Operations',
+            uiTitle = (Config.Ui and Config.Ui.mainTitle) or JOB_NAME,
+            uiSubtitle = (Config.Ui and Config.Ui.supplierSubtitle) or 'Fuel Supplier'
         }
     })
     SetNuiFocus(true, true)
 end
 
 local function openOilBuyerUI()
+    dbg('openOilBuyerUI')
     -- Close rig UI if open.
     if currentRigId ~= nil then
         SendNUIMessage({ action = 'hideRigUI' })
@@ -85,11 +107,15 @@ local function openOilBuyerUI()
     SendNUIMessage({ action = 'hideSupplierUI' })
 
     local currentBarrels = getPlayerBarrelCount()
+    dbg('OilBuyer currentBarrels=%s', tostring(currentBarrels))
     SendNUIMessage({
         action = 'showBuyerUI',
         config = {
             barrelPrice = Config.BarrelSellPrice or 0,
-            currentBarrels = currentBarrels or 0
+            currentBarrels = currentBarrels or 0,
+            uiKicker = (Config.Ui and Config.Ui.opsKicker) or 'Operations',
+            uiTitle = (Config.Ui and Config.Ui.mainTitle) or JOB_NAME,
+            uiSubtitle = (Config.Ui and Config.Ui.buyerSubtitle) or 'Oil Buyer'
         }
     })
     SetNuiFocus(true, true)
@@ -101,6 +127,8 @@ local function updateUI(rigId, state)
     if currentRigId ~= rigId then
         return
     end
+
+    dbg('updateUI rigId=%s fuel=%s running=%s barrels=%s remaining=%s', tostring(rigId), tostring(state.fuelCans), tostring(state.isRunning), tostring(state.barrelsReady), tostring(state.remaining))
 
     local maxBarrels = tonumber(Config.MaxBarrelsStored) or 10
     local remaining = tonumber(state.remaining or 0) or 0
@@ -132,6 +160,7 @@ end
 
 -- Open UI
 local function openRigPanel(rigId)
+    dbg('openRigPanel rigId=%s', tostring(rigId))
     -- Wait briefly for NUI to report ready; avoids locking player if NUI failed to load.
     if not nuiReady then
         local start = GetGameTimer()
@@ -139,6 +168,7 @@ local function openRigPanel(rigId)
             Wait(50)
         end
         if not nuiReady then
+            dbg('NUI not ready after 2000ms (opening anyway)')
             -- Don't block entirely; allow attempting to open UI anyway.
             -- The existing uiShown fail-safe will release focus if NUI is truly broken.
             TriggerEvent('L3GiTOilRig:client:notify', {
@@ -151,6 +181,7 @@ local function openRigPanel(rigId)
 
     local state = lib.callback.await('L3GiTOilRig:server:getRigState', false, rigId)
     if not state then
+        dbg('getRigState returned nil; using defaults')
         state = { fuelCans = 0, isRunning = false, barrelsReady = 0, remaining = 0 }
     end
 
@@ -160,6 +191,8 @@ local function openRigPanel(rigId)
     end)
     if okName and type(nameOrErr) == 'string' then
         rigName = nameOrErr
+    else
+        dbg('getRigName failed or returned non-string')
     end
 
     rigStates[rigId] = state
@@ -178,11 +211,17 @@ local function openRigPanel(rigId)
             fuelCost = Config.FuelCost,
             barrelSellPrice = Config.BarrelSellPrice,
             fuelToYield = Config.FuelToYield,
-            subtitle = 'Fuel → Produce → Collect → Sell'
+            subtitle = 'Fuel → Produce → Collect → Sell',
+            uiKicker = (Config.Ui and Config.Ui.mainKicker) or 'Field Terminal',
+            uiTitle = (Config.Ui and Config.Ui.mainTitle) or JOB_NAME,
+            uiSubtitle = (Config.Ui and Config.Ui.mainSubtitle) or 'Restricted Field Terminal',
+            infoNote = (Config.Ui and Config.Ui.infoNote) or ''
         }
     })
 
     SetNuiFocus(true, true)
+
+    dbg('Rig UI shown; focus set. rigId=%s', tostring(rigId))
 
     -- Fail-safe: if NUI doesn't acknowledge showing within 1.5s, release focus.
     CreateThread(function()
@@ -196,6 +235,7 @@ local function openRigPanel(rigId)
         end
 
         if currentRigId == myRigId and lastUiShownAt == 0 then
+            dbg('uiShown not received within 1500ms; releasing focus')
             SetNuiFocus(false, false)
             currentRigId = nil
         end
@@ -238,9 +278,10 @@ end
 
 -- Notifications
 RegisterNetEvent('L3GiTOilRig:client:notify', function(data)
+    dbg('notify type=%s title=%s msg=%s', tostring(data and data.type), tostring(data and data.title), tostring(data and data.message))
     SendNUIMessage({
         action = 'notify',
-        title = data.title or 'Playground Oil Rig',
+        title = data.title or (Config and Config.NotifyTitle) or JOB_NAME,
         message = data.message or '',
         nType = data.type or 'info',
         duration = 4000
@@ -249,6 +290,7 @@ end)
 
 -- Server pushes updated rig state
 RegisterNetEvent('L3GiTOilRig:client:updateRigState', function(rigId, data)
+    dbg('updateRigState rigId=%s fuel=%s running=%s barrels=%s remaining=%s', tostring(rigId), tostring(data and data.fuelCans), tostring(data and data.isRunning), tostring(data and data.barrelsReady), tostring(data and data.remaining))
     local state = {
         fuelCans = data.fuelCans or 0,
         isRunning = data.isRunning or false,
@@ -358,14 +400,47 @@ CreateThread(function()
         return
     end
 
+    local function alignRigObject(obj, rig)
+        if not obj or obj == 0 or not rig then return end
+
+        -- If the object was already frozen (or created by us), unfreeze briefly so coords can apply.
+        FreezeEntityPosition(obj, false)
+
+        -- Always apply heading.
+        if rig.heading ~= nil then
+            SetEntityHeading(obj, rig.heading)
+        end
+
+        -- Try to snap to the actual ground Z at the rig location.
+        local x, y, z = rig.coords.x, rig.coords.y, rig.coords.z
+        RequestCollisionAtCoord(x, y, z)
+
+        local foundGround, groundZ = GetGroundZFor_3dCoord(x, y, z + 50.0, false)
+        if foundGround then
+            local zOff = tonumber(Config.RigZOffset or 0.0) or 0.0
+            SetEntityCoordsNoOffset(obj, x, y, groundZ + zOff, false, false, false)
+        else
+            -- Fallback: use the entity's current position and the built-in helper.
+            PlaceObjectOnGroundProperly(obj)
+            local zOff = tonumber(Config.RigZOffset or 0.0) or 0.0
+            if zOff ~= 0.0 then
+                local p = GetEntityCoords(obj)
+                SetEntityCoordsNoOffset(obj, p.x, p.y, p.z + zOff, false, false, false)
+            end
+        end
+
+        FreezeEntityPosition(obj, true)
+    end
+
     for _, rig in ipairs(Config.RigLocations) do
         local obj = GetClosestObjectOfType(rig.coords.x, rig.coords.y, rig.coords.z, 2.0, Config.RigModel, false, false, false)
         if obj == 0 then
             lib.requestModel(Config.RigModel)
             obj = CreateObject(Config.RigModel, rig.coords.x, rig.coords.y, rig.coords.z, false, false, false)
-            SetEntityHeading(obj, rig.heading)
-            FreezeEntityPosition(obj, true)
         end
+
+        -- Always align to ground (covers both newly created and already-existing rigs).
+        alignRigObject(obj, rig)
 
         exports.ox_target:addLocalEntity(obj, {
             {
@@ -393,6 +468,7 @@ end)
 
 -- NUI Callbacks
 RegisterNUICallback('closeUI', function(_, cb)
+    dbg('NUI closeUI')
     SetNuiFocus(false, false)
     SendNUIMessage({ action = 'hideRigUI' })
     currentRigId = nil
@@ -402,12 +478,14 @@ RegisterNUICallback('closeUI', function(_, cb)
 end)
 
 RegisterNUICallback('closeSupplierUI', function(_, cb)
+    dbg('NUI closeSupplierUI')
     cb('ok')
     SendNUIMessage({ action = 'hideSupplierUI' })
     SetNuiFocus(false, false)
 end)
 
 RegisterNUICallback('closeBuyerUI', function(_, cb)
+    dbg('NUI closeBuyerUI')
     cb('ok')
     SendNUIMessage({ action = 'hideBuyerUI' })
     SetNuiFocus(false, false)
@@ -417,6 +495,7 @@ RegisterNUICallback('buyDiesel', function(data, cb)
     cb('ok')
 
     local amount = tonumber(data and data.amount or 1) or 1
+    dbg('NUI buyDiesel amount=%s', tostring(amount))
     TriggerServerEvent('L3GiTOilRig:server:buyDiesel', amount)
 
     -- Refresh max quantity from inventory shortly after buying.
@@ -436,6 +515,7 @@ end)
 
 RegisterNUICallback('requestSupplierRefresh', function(_, cb)
     cb('ok')
+    dbg('NUI requestSupplierRefresh')
     local currentFuel = getPlayerFuelCount()
     SendNUIMessage({
         action = 'updateSupplierUI',
@@ -451,6 +531,7 @@ RegisterNUICallback('sellBarrels', function(data, cb)
     cb('ok')
 
     local amount = tonumber(data and data.amount or 1) or 1
+    dbg('NUI sellBarrels amount=%s', tostring(amount))
     TriggerServerEvent('L3GiTOilRig:server:sellBarrels', amount)
 
     -- Refresh max quantity from inventory shortly after selling.
@@ -469,11 +550,13 @@ end)
 
 RegisterNUICallback('uiReady', function(_, cb)
     nuiReady = true
+    dbg('NUI uiReady')
     cb('ok')
 end)
 
 RegisterNUICallback('uiShown', function(_, cb)
     lastUiShownAt = GetGameTimer()
+    dbg('NUI uiShown')
     cb('ok')
 end)
 
@@ -481,6 +564,8 @@ RegisterNUICallback('fuelRig', function(data, cb)
     cb('ok')
 
     local rigId = data.rigId
+
+    dbg('NUI fuelRig rigId=%s', tostring(rigId))
 
     local now = GetGameTimer()
     if fuelingInProgress and now < (fuelingEndsAt or 0) then
@@ -515,11 +600,13 @@ end)
 RegisterNUICallback('startCycle', function(data, cb)
     cb('ok')
     local rigId = (data and data.rigId) or currentRigId
+    dbg('NUI startCycle rigId=%s', tostring(rigId))
     TriggerServerEvent('L3GiTOilRig:server:startCycle', rigId)
 end)
 
 RegisterNUICallback('collectBarrel', function(data, cb)
     cb('ok')
+    dbg('NUI collectBarrel rigId=%s', tostring(data and data.rigId))
     TriggerServerEvent('L3GiTOilRig:server:collectBarrel', data.rigId)
 end)
 
@@ -529,6 +616,8 @@ RegisterNUICallback('setRigName', function(data, cb)
 
     local rigId = data.rigId or currentRigId
     local name = data.rigName or ''
+
+    dbg('NUI setRigName rigId=%s name=%s', tostring(rigId), tostring(name))
 
     CreateThread(function()
         local ok, res = pcall(function()

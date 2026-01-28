@@ -1,6 +1,29 @@
 Config = {}
 
 --========================================================--
+--====================== BRANDING ========================--
+--========================================================--
+
+-- These labels are used across UI headers, blips, and notifications.
+-- Customize them to match your server/job.
+
+Config.JobName = 'Playground Oil Rig'
+Config.NotifyTitle = 'Playground Oil Rig'
+
+-- When enabled, prints helpful debug logs to client/server console.
+Config.Debug = false
+
+Config.Ui = {
+    mainKicker = 'Field Terminal',
+    mainTitle = 'Playground Oil Rig',
+    mainSubtitle = 'Restricted Field Terminal',
+    opsKicker = 'Operations',
+    supplierSubtitle = 'Fuel Supplier',
+    buyerSubtitle = 'Oil Buyer',
+    infoNote = 'All progress is saved after tsunami.'
+}
+
+--========================================================--
 --======================= ECONOMY =========================--
 --========================================================--
 
@@ -41,6 +64,9 @@ Config.FuelToYield = {
 --========================================================--
 
 Config.RigModel = joaat('p_oil_pjack_03_s')
+
+-- If your rig model is floating/sunk, adjust this (negative moves it down).
+Config.RigZOffset = 0.0
 
 Config.RigLocations = {
     {

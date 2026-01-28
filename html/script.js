@@ -50,6 +50,13 @@ function $(id) {
     return document.getElementById(id);
 }
 
+function setText(id, value) {
+    const el = $(id);
+    if (!el) return;
+    if (typeof value !== "string") return;
+    el.textContent = value;
+}
+
 async function postNui(endpoint, payload) {
     try {
         await fetch(`https://${RESOURCE_NAME}/${endpoint}`, {
@@ -75,6 +82,10 @@ function showSupplierUI(cfg) {
         ...supplierConfig,
         ...(cfg || {}),
     };
+
+    if (cfg && typeof cfg.uiKicker === "string") setText("supplier-kicker", cfg.uiKicker);
+    if (cfg && typeof cfg.uiTitle === "string") setText("supplier-title", cfg.uiTitle);
+    if (cfg && typeof cfg.uiSubtitle === "string") setText("supplier-subtitle", cfg.uiSubtitle);
 
     supplierQty = 1;
 
@@ -108,6 +119,10 @@ function showBuyerUI(cfg) {
         ...buyerConfig,
         ...(cfg || {}),
     };
+
+    if (cfg && typeof cfg.uiKicker === "string") setText("buyer-kicker", cfg.uiKicker);
+    if (cfg && typeof cfg.uiTitle === "string") setText("buyer-title", cfg.uiTitle);
+    if (cfg && typeof cfg.uiSubtitle === "string") setText("buyer-subtitle", cfg.uiSubtitle);
 
     // Close other panels.
     hideUI();
@@ -464,7 +479,11 @@ window.addEventListener("message", (event) => {
                     ...msg.config,
                     fuelToYield: msg.config.fuelToYield || rigConfig.fuelToYield,
                 };
-                if (rigConfig.subtitle) $("ui-subtitle").textContent = rigConfig.subtitle;
+                if (rigConfig.subtitle) setText("ui-subtitle", rigConfig.subtitle);
+                if (rigConfig.uiKicker) setText("ui-kicker", rigConfig.uiKicker);
+                if (rigConfig.uiTitle) setText("ui-title", rigConfig.uiTitle);
+                if (rigConfig.uiSubtitle) setText("ui-subtitle", rigConfig.uiSubtitle);
+                if (rigConfig.infoNote) setText("rig-info-text", rigConfig.infoNote);
             }
 
             if (typeof msg.rigName === "string") {
