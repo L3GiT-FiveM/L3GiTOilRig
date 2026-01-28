@@ -593,7 +593,7 @@ RegisterNetEvent('L3GiTOilRig:server:startCycle', function(rigId)
     if (MySQL and MySQL.query) and not dbReady() then
         dbg('startCycle blocked: DB not ready')
         Notify(src, {
-            title = 'Playground Oil Rig',
+            title = titleMain(),
             message = 'Rig database is still loading. Try again in a moment.',
             type = 'error'
         })
@@ -604,7 +604,7 @@ RegisterNetEvent('L3GiTOilRig:server:startCycle', function(rigId)
     if id == '' then
         dbg('startCycle blocked: invalid rig id')
         Notify(src, {
-            title = 'Playground Oil Rig',
+            title = titleMain(),
             message = 'Start failed: invalid rig id.',
             type = 'error'
         })
@@ -630,7 +630,7 @@ RegisterNetEvent('L3GiTOilRig:server:startCycle', function(rigId)
     local rig = rigs[id]
     if not rig then
         Notify(src, {
-            title = 'Playground Oil Rig',
+            title = titleMain(),
             message = ('Start failed: rig not found (%s).'):format(id),
             type = 'error'
         })
@@ -639,7 +639,7 @@ RegisterNetEvent('L3GiTOilRig:server:startCycle', function(rigId)
 
     if rig.isRunning then
         dbg('startCycle blocked: already running (%s)', tostring(id))
-        Notify(src, { title = 'Playground Oil Rig', message = 'This rig is already running.', type = 'error' })
+        Notify(src, { title = titleMain(), message = 'This rig is already running.', type = 'error' })
         return
     end
 
@@ -648,7 +648,7 @@ RegisterNetEvent('L3GiTOilRig:server:startCycle', function(rigId)
     if fuel < need then
         dbg('startCycle blocked: insufficient fuel (%s fuel=%d need=%d)', tostring(id), fuel, need)
         Notify(src, {
-            title = 'Playground Oil Rig',
+            title = titleMain(),
             message = ('You need at least %d gal fuel to start a cycle (rig has %d).'):format(need, fuel),
             type = 'error'
         })
@@ -659,13 +659,13 @@ RegisterNetEvent('L3GiTOilRig:server:startCycle', function(rigId)
     -- even if storage is currently full. Output will cap at the storage limit.
     if startCycle(id, rig, true) then
         dbg('startCycle started: rig=%s start=%s end=%s fuelNow=%s', tostring(id), tostring(rig.startTime), tostring(rig.endTime), tostring(rig.fuelCans))
-        Notify(src, { title = 'Playground Oil Rig', message = ('Cycle started (used %d gal).'):format(need), type = 'success' })
+        Notify(src, { title = titleMain(), message = ('Cycle started (used %d gal).'):format(need), type = 'success' })
     else
         local storage = tonumber(rig.barrelsReady or 0) or 0
         local maxStorage = getMaxStored()
         dbg('startCycle failed: rig=%s fuel=%d need=%d storage=%d/%d', tostring(id), fuel, need, storage, maxStorage)
         Notify(src, {
-            title = 'Playground Oil Rig',
+            title = titleMain(),
             message = ('Start failed (rig=%s, fuel=%d, need=%d, storage=%d/%d).'):format(id, fuel, need, storage, maxStorage),
             type = 'error'
         })
@@ -691,7 +691,7 @@ RegisterNetEvent('L3GiTOilRig:server:collectBarrel', function(rigId)
     if amount <= 0 then
         dbg('collectBarrel blocked: no barrels (rig=%s)', tostring(rigId))
         Notify(src, {
-            title = 'Playground Oil Rig',
+            title = titleMain(),
             message = 'Rig is not ready to collect. No barrels produced.',
             type = 'error'
         })
@@ -701,7 +701,7 @@ RegisterNetEvent('L3GiTOilRig:server:collectBarrel', function(rigId)
     if not exports.ox_inventory:CanCarryItem(src, Config.BarrelItem, amount) then
         dbg('collectBarrel blocked: cannot carry item=%s amount=%s', tostring(Config.BarrelItem), tostring(amount))
         Notify(src, {
-            title = 'Playground Oil Rig',
+            title = titleMain(),
             message = ('You cannot carry %dx oil barrels. Your inventory is full.'):format(amount),
             type = 'error'
         })
@@ -714,7 +714,7 @@ RegisterNetEvent('L3GiTOilRig:server:collectBarrel', function(rigId)
     dbg('collectBarrel success: gave %dx %s', amount, tostring(Config.BarrelItem))
 
     Notify(src, {
-        title = 'Playground Oil Rig',
+        title = titleMain(),
         message = ('Collected %dx oil barrels.'):format(amount),
         type = 'success'
     })
@@ -743,7 +743,7 @@ RegisterNetEvent('L3GiTOilRig:server:sellBarrels', function(amount)
     if count <= 0 then
         dbg('sellBarrels blocked: no barrels')
         Notify(src, {
-            title = 'Oil Buyer',
+            title = titleBuyer(),
             message = 'You have no oil barrels to sell.',
             type = 'error'
         })
@@ -761,7 +761,7 @@ RegisterNetEvent('L3GiTOilRig:server:sellBarrels', function(amount)
     if not removed then
         dbg('sellBarrels failed: RemoveItem failed (item=%s qty=%s)', tostring(Config.BarrelItem), tostring(qty))
         Notify(src, {
-            title = 'Oil Buyer',
+            title = titleBuyer(),
             message = 'Sale failed. Try again.',
             type = 'error'
         })
@@ -773,7 +773,7 @@ RegisterNetEvent('L3GiTOilRig:server:sellBarrels', function(amount)
     dbg('sellBarrels success: qty=%s total=%s', tostring(qty), tostring(total))
 
     Notify(src, {
-        title = 'Oil Buyer',
+        title = titleBuyer(),
         message = ('Sold %dx oil barrel(s) for $%s'):format(qty, total),
         type = 'success'
     })

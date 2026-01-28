@@ -1,6 +1,6 @@
 # L3GiTOilRig
 
-Advanced Oil Rig w/ a NUI terminal UI + Fuel supplier + Oil buyer.
+Oil rig / pumpjack job loop with a NUI terminal UI + fuel supplier + oil buyer.
 
 ## Requirements
 - `ox_lib`
@@ -52,16 +52,3 @@ Optional manual SQL: [sql/l3git_oilrig.sql](sql/l3git_oilrig.sql)
 - Callback error / UI opens but shows errors: restart the resource after changes.
 - No persistence: make sure `oxmysql` starts before this resource.
 - UI not opening: verify `ui_page` and file list in [fxmanifest.lua](fxmanifest.lua).
-
-
-<img width="664" height="482" alt="image" src="https://github.com/user-attachments/assets/888da44c-3e74-4b57-9d4d-325dc639e8dc" />
-
-<img width="366" height="387" alt="image" src="https://github.com/user-attachments/assets/3494d3c6-9d28-48f1-9958-7f3c91bd1852" />
-
-<img width="365" height="458" alt="image" src="https://github.com/user-attachments/assets/6162ef91-499a-464d-846f-0ff681cd4895" />
-
-<img width="358" height="429" alt="image" src="https://github.com/user-attachments/assets/cf81807e-35f0-4c85-993e-3d2eda7c88d8" />
-
-
-
-

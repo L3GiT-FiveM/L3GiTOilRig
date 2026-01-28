@@ -14,6 +14,21 @@ let buyerConfig = { barrelPrice: 0, currentBarrels: 0 };
 let buyerSellBusy = false;
 let buyerQty = 1;
 
+function setDocumentTitle(cfg) {
+    const uiTitle = (cfg && typeof cfg.uiTitle === "string") ? cfg.uiTitle.trim() : "";
+    const uiKicker = (cfg && typeof cfg.uiKicker === "string") ? cfg.uiKicker.trim() : "";
+    const uiSubtitle = (cfg && typeof cfg.uiSubtitle === "string") ? cfg.uiSubtitle.trim() : "";
+
+    const parts = [];
+    parts.push(uiTitle || "L3GiTOilRig");
+
+    // Prefer the kicker (short label), else subtitle.
+    if (uiKicker) parts.push(uiKicker);
+    else if (uiSubtitle) parts.push(uiSubtitle);
+
+    document.title = parts.join(" — ");
+}
+
 function setOxInventoryItemImage(imgEl, itemName) {
     if (!imgEl) return;
     const name = (itemName || "").trim();
@@ -83,6 +98,8 @@ function showSupplierUI(cfg) {
         ...(cfg || {}),
     };
 
+    setDocumentTitle(cfg);
+
     if (cfg && typeof cfg.uiKicker === "string") setText("supplier-kicker", cfg.uiKicker);
     if (cfg && typeof cfg.uiTitle === "string") setText("supplier-title", cfg.uiTitle);
     if (cfg && typeof cfg.uiSubtitle === "string") setText("supplier-subtitle", cfg.uiSubtitle);
@@ -119,6 +136,8 @@ function showBuyerUI(cfg) {
         ...buyerConfig,
         ...(cfg || {}),
     };
+
+    setDocumentTitle(cfg);
 
     if (cfg && typeof cfg.uiKicker === "string") setText("buyer-kicker", cfg.uiKicker);
     if (cfg && typeof cfg.uiTitle === "string") setText("buyer-title", cfg.uiTitle);
@@ -479,6 +498,9 @@ window.addEventListener("message", (event) => {
                     ...msg.config,
                     fuelToYield: msg.config.fuelToYield || rigConfig.fuelToYield,
                 };
+
+                setDocumentTitle(rigConfig);
+
                 if (rigConfig.subtitle) setText("ui-subtitle", rigConfig.subtitle);
                 if (rigConfig.uiKicker) setText("ui-kicker", rigConfig.uiKicker);
                 if (rigConfig.uiTitle) setText("ui-title", rigConfig.uiTitle);

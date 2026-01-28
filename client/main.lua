@@ -24,6 +24,8 @@ local JOB_NAME = (Config and Config.JobName) or 'Playground Oil Rig'
 local JOB_BLIP_COLOR = 5
 
 local rigBlips = {}
+local rigObjects = {}
+local rigTargetsAdded = {}
 
 local function formatTime(ms)
     local seconds = math.floor(ms / 1000)
@@ -396,10 +398,6 @@ end)
 
 -- Rig Target
 CreateThread(function()
-    if GetResourceState('ox_target') ~= 'started' then
-        return
-    end
-
     local function alignRigObject(obj, rig)
         if not obj or obj == 0 or not rig then return end
 
@@ -432,19 +430,67 @@ CreateThread(function()
         FreezeEntityPosition(obj, true)
     end
 
-    for _, rig in ipairs(Config.RigLocations) do
-        local obj = GetClosestObjectOfType(rig.coords.x, rig.coords.y, rig.coords.z, 2.0, Config.RigModel, false, false, false)
+    local function prepareRigObject(obj)
+        if not obj or obj == 0 then return end
+
+        -- Prevent world cleanup/destruction.
+        SetEntityAsMissionEntity(obj, true, true)
+        SetEntityInvincible(obj, true)
+        SetEntityCanBeDamaged(obj, false)
+        SetEntityDynamic(obj, false)
+
+        -- Help avoid aggressive culling/streaming weirdness.
+        SetEntityVisible(obj, true, false)
+        ResetEntityAlpha(obj)
+        SetEntityAlpha(obj, 255, false)
+        SetEntityLodDist(obj, 1200)
+    end
+
+    local function ensureRigObject(rig)
+        if not rig or not rig.coords then return 0 end
+
+        local rigId = tostring(rig.id)
+        local existing = rigObjects[rigId]
+        if existing and existing ~= 0 and DoesEntityExist(existing) then
+            return existing
+        end
+
+        local radius = 25.0
+        local obj = GetClosestObjectOfType(rig.coords.x, rig.coords.y, rig.coords.z, radius, Config.RigModel, false, false, false)
         if obj == 0 then
             lib.requestModel(Config.RigModel)
             obj = CreateObject(Config.RigModel, rig.coords.x, rig.coords.y, rig.coords.z, false, false, false)
+            dbg('spawned rig object rigId=%s entity=%s', tostring(rigId), tostring(obj))
+        else
+            dbg('found existing rig object rigId=%s entity=%s', tostring(rigId), tostring(obj))
         end
 
-        -- Always align to ground (covers both newly created and already-existing rigs).
-        alignRigObject(obj, rig)
+        if obj ~= 0 then
+            prepareRigObject(obj)
+            alignRigObject(obj, rig)
+            rigObjects[rigId] = obj
+            rigTargetsAdded[rigId] = false
+        end
+
+        return obj
+    end
+
+    local function ensureRigTarget(rig)
+        if GetResourceState('ox_target') ~= 'started' then
+            return
+        end
+
+        local rigId = tostring(rig.id)
+        local obj = ensureRigObject(rig)
+        if obj == 0 then return end
+
+        if rigTargetsAdded[rigId] then
+            return
+        end
 
         exports.ox_target:addLocalEntity(obj, {
             {
-                name = 'L3GiTOilRig_panel_' .. rig.id,
+                name = 'L3GiTOilRig_panel_' .. rigId,
                 label = 'Rig Control Panel',
                 icon = 'fa-solid fa-oil-can',
                 distance = Config.TargetDistanceRig,
@@ -453,7 +499,48 @@ CreateThread(function()
                 end
             }
         })
+        rigTargetsAdded[rigId] = true
+        dbg('added ox_target to rigId=%s entity=%s', tostring(rigId), tostring(obj))
     end
+
+    -- Always spawn rigs (even if ox_target isn't started yet).
+    for _, rig in ipairs(Config.RigLocations or {}) do
+        ensureRigObject(rig)
+        ensureRigTarget(rig)
+    end
+
+    -- Watchdog: rigs can be cleaned up/destroyed; ensure they exist and are targetable.
+    CreateThread(function()
+        while true do
+            Wait(1000)
+
+            local ped = PlayerPedId()
+            local p = GetEntityCoords(ped)
+            for _, rig in ipairs(Config.RigLocations or {}) do
+                local dx = (p.x - rig.coords.x)
+                local dy = (p.y - rig.coords.y)
+                local dz = (p.z - rig.coords.z)
+                local dist = math.sqrt((dx * dx) + (dy * dy) + (dz * dz))
+
+                -- Only babysit rigs when the player is reasonably close.
+                if dist <= 175.0 then
+                local rigId = tostring(rig.id)
+                local before = rigObjects[rigId]
+                local obj = ensureRigObject(rig)
+                if obj ~= 0 and before ~= obj then
+                    rigTargetsAdded[rigId] = false
+                end
+
+                -- If something made it invisible, force it back.
+                if obj ~= 0 and DoesEntityExist(obj) then
+                    prepareRigObject(obj)
+                end
+
+                ensureRigTarget(rig)
+                end
+            end
+        end
+    end)
 end)
 
 -- Map blips for rigs
