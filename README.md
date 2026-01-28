@@ -52,3 +52,12 @@ Optional manual SQL: [sql/l3git_oilrig.sql](sql/l3git_oilrig.sql)
 - Callback error / UI opens but shows errors: restart the resource after changes.
 - No persistence: make sure `oxmysql` starts before this resource.
 - UI not opening: verify `ui_page` and file list in [fxmanifest.lua](fxmanifest.lua).
+
+
+<img width="664" height="482" alt="image" src="https://github.com/user-attachments/assets/343a962c-1194-4c9e-bac7-92e035d9ba2c" />
+<img width="366" height="387" alt="image" src="https://github.com/user-attachments/assets/33e6f23d-154a-4716-8a3a-69fc419c1f29" />
+<img width="365" height="458" alt="image" src="https://github.com/user-attachments/assets/84815571-8820-4407-a956-9025dc94b0cb" />
+<img width="358" height="429" alt="image" src="https://github.com/user-attachments/assets/eb589c3e-4dce-4333-8f53-b2eb4d1c3935" />
+
+
+
