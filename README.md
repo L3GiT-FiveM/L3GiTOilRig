@@ -1,6 +1,6 @@
 # L3GiTOilRig
 
-Oil rig / pumpjack job loop with a NUI terminal UI + fuel supplier + oil buyer.
+Advanced Oil Rig Job w/ a NUI terminal UI + fuel supplier + oil buyer.
 
 ## Requirements
 - `ox_lib`
@@ -58,6 +58,7 @@ Optional manual SQL: [sql/l3git_oilrig.sql](sql/l3git_oilrig.sql)
 <img width="366" height="387" alt="image" src="https://github.com/user-attachments/assets/33e6f23d-154a-4716-8a3a-69fc419c1f29" />
 <img width="365" height="458" alt="image" src="https://github.com/user-attachments/assets/84815571-8820-4407-a956-9025dc94b0cb" />
 <img width="358" height="429" alt="image" src="https://github.com/user-attachments/assets/eb589c3e-4dce-4333-8f53-b2eb4d1c3935" />
+
 
 
 
