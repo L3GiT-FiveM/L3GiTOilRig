@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Playground Oil Rig — Field Terminal</title>
+  <link rel="stylesheet" href="terminal.css">
+</head>
+<body>
+
+  <div id="miningNotifications"></div>
+
+  <div id="contract-container" class="contract-container hidden">
+    <div class="ui-stack" role="dialog" aria-modal="true" aria-label="Oil rig work order">
+
+    <div class="rig-layout">
+
+      <div class="terminal-stack" aria-label="Terminal panels">
+      <div class="contract-panel" aria-label="Work order panel">
+        <div class="header-text">
+          <div class="header-kicker">Field Terminal</div>
+          <h1>Playground Oil Rig</h1>
+          <span class="subtitle" id="ui-subtitle">Restricted Field Terminal</span>
+        </div>
+
+        <div class="contract-body">
+          <div class="section">
+            <div class="kv-grid">
+              <div class="kv">
+                <div class="k">
+                  <span class="k-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 0 0-7.07 17.07l1.41-1.41A8 8 0 1 1 20 12h2A10 10 0 0 0 12 2zm-1 5h2v6l5 3-1 1.73-6-3.73V7z"/></svg>
+                  </span>
+                  Rig Name
+                </div>
+                <div class="v">
+                  <div class="name-display-row">
+                    <div id="rig-name-display" class="name-display">(not set)</div>
+                    <button id="btn-set-name" class="icon-btn small" type="button" aria-label="Rename rig" title="Rename">
+                      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm2.92 2.83H5v-.92l8.06-8.06.92.92L5.92 20.08zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div class="kv">
+                <div class="k">
+                  <span class="k-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M16 3H5a2 2 0 0 0-2 2v14h2v-7h11v7h2V5a2 2 0 0 0-2-2zm0 7H5V5h11v5zm4 2v7a3 3 0 0 1-3 3h-1v-2h1a1 1 0 0 0 1-1v-7h2z"/></svg>
+                  </span>
+                  Fuel (gal)
+                </div>
+                <div class="v" id="rig-fuel">0 / 9</div>
+              </div>
+              <div class="kv">
+                <div class="k">
+                  <span class="k-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M19 11H13V5h-2v6H5v2h6v6h2v-6h6z"/></svg>
+                  </span>
+                  State
+                </div>
+                <div class="v" id="rig-status">Out of fuel</div>
+              </div>
+              <div class="kv">
+                <div class="k">
+                  <span class="k-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M12 1a11 11 0 1 0 0 22A11 11 0 0 0 12 1zm0 20a9 9 0 1 1 0-18 9 9 0 0 1 0 18zm1-9h4v2h-6V6h2v6z"/></svg>
+                  </span>
+                  Time
+                </div>
+                <div class="v" id="rig-time">N/A</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section controls">
+            <h3>Controls</h3>
+            <div class="control-stack">
+              <div class="control-line">
+                <div class="control-label">Fuel authorization</div>
+                <div class="control-row">
+                  <button id="btn-fuel" class="btn primary" type="button">
+                    <span class="btn-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M16 3H5a2 2 0 0 0-2 2v14h2v-7h11v7h2V5a2 2 0 0 0-2-2zm0 7H5V5h11v5zm4 2v7a3 3 0 0 1-3 3h-1v-2h1a1 1 0 0 0 1-1v-7h2z"/></svg></span>
+                    Add Fuel (1 gal)
+                  </button>
+                  <button id="btn-start" class="btn secondary" type="button">
+                    <span class="btn-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2v10l4 2-1 1.7-5-2.7V2h2zm0 20A10 10 0 1 1 22 12h-2a8 8 0 1 0-8 8v2z"/></svg></span>
+                    Start Cycle (3 gal)
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <h3>Cycle</h3>
+            <div class="progress-track" aria-label="Cycle progress">
+              <div id="progress-fill" class="progress-fill"></div>
+              <div id="progress-marker" class="progress-marker"></div>
+            </div>
+            <div id="rig-tsunami-note" class="footer-note rig-tsunami-note"><span class="rig-note-label">NOTE:</span> Active state won't be remembered after a tsunami.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Fueling popup (visual only, client drives timing) -->
+      <div id="fueling-popup" class="fueling-popup hidden" role="status" aria-label="Fueling">
+        <div class="fueling-title">Fueling Rig</div>
+        <div class="fueling-sub" id="fueling-text">Fueling rig...</div>
+        <div class="popup-bar">
+          <div id="fueling-bar" class="popup-bar-fill"></div>
+        </div>
+      </div>
+
+      </div>
+
+      <div class="side-stack" aria-label="Rig gauges & controls">
+        <div class="gauges-panel" aria-label="Rig gauges">
+          <div class="gauges-header">Gauges</div>
+
+          <div class="gauge barrels">
+            <div class="gauge-title">Collected Barrels</div>
+            <div class="barrels-row">
+              <div id="storage-text" class="meter-text">0 / 10</div>
+              <button id="btn-collect" class="icon-btn" type="button" aria-label="Collect Barrel" title="Collect Barrel">
+                <img id="gauge-barrel-img" class="gauge-item-img" alt="" aria-hidden="true" />
+              </button>
+            </div>
+            <span id="rig-barrels" class="sr-only">0</span>
+          </div>
+        </div>
+
+        <button id="btn-close" class="btn primary close-below" type="button">Close</button>
+      </div>
+
+    </div>
+
+    </div>
+  </div>
+
+  <!-- Fuel supplier UI -->
+  <div id="supplier-container" class="contract-container hidden">
+    <div class="ui-stack" role="dialog" aria-modal="true" aria-label="Fuel supplier">
+      <div class="supplier-stack" aria-label="Fuel supplier panels">
+        <div class="contract-panel" aria-label="Fuel supplier panel">
+          <div class="header-text">
+            <div class="header-kicker">Operations</div>
+            <h1>Playground Oil Rig</h1>
+            <span class="subtitle">Fuel Supplier</span>
+          </div>
+
+          <div class="contract-body">
+            <div id="supplier-info-view">
+              <div class="section">
+                <h3>Job Brief</h3>
+                <div class="intro supplier-copy">
+                  <div class="supplier-line">1) Buy diesel cans (the rig drinks premium).</div>
+                  <div class="supplier-line">2) Walk to the rig control panel & add fuel (1 gal each, no sipping).</div>
+                  <div class="supplier-line">3) Start a cycle (uses 3 gal) & let the machine do its thing.</div>
+                  <div class="supplier-line">4) Collect barrels & sell them to the buyer (act surprised it worked).</div>
+                </div>
+              </div>
+
+              <div class="section controls">
+                <h3>Actions</h3>
+                <div class="control-row">
+                  <button id="btn-supplier-shop" class="btn primary" type="button">Open Shop</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="supplier-shop-view" class="hidden">
+              <div class="section">
+                <h3>Shop</h3>
+                <div class="shop-card">
+                  <div class="shop-item">
+                    <div class="shop-item-media" aria-hidden="true">
+                      <img id="shop-item-img" class="shop-item-img" alt="Diesel can" />
+                    </div>
+                    <div class="shop-item-text">
+                      <div class="shop-item-title">Diesel Can</div>
+                      <div class="shop-item-sub">Adds 1 gal of fuel to your rig.</div>
+                    </div>
+                  </div>
+                  <div class="shop-price" id="shop-fuel-price">$0</div>
+                </div>
+              </div>
+
+              <div class="section controls">
+                <h3>Purchase</h3>
+                <div class="shop-qty">
+                  <div class="shop-qty-label">Quantity</div>
+                  <div class="shop-qty-controls">
+                    <button id="btn-supplier-qty-minus" class="btn secondary" type="button" aria-label="Decrease quantity">-</button>
+                    <div id="supplier-qty-value" class="shop-qty-value">1</div>
+                    <button id="btn-supplier-qty-plus" class="btn secondary" type="button" aria-label="Increase quantity">+</button>
+                  </div>
+                  <div class="shop-total">Total: <span id="supplier-total-price">$0</span></div>
+                </div>
+                <div class="control-row">
+                  <button id="btn-shop-back" class="btn secondary" type="button">Back</button>
+                    <button id="btn-shop-buy" class="btn primary" type="button">Purchase</button>
+                </div>
+                <div class="footer-note">You must have cash & inventory space.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button id="btn-supplier-close" class="btn primary close-below" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Oil buyer UI (shop only) -->
+  <div id="buyer-container" class="contract-container hidden">
+    <div class="ui-stack" role="dialog" aria-modal="true" aria-label="Oil buyer">
+      <div class="supplier-stack" aria-label="Oil buyer panels">
+        <div class="contract-panel" aria-label="Oil buyer panel">
+          <div class="header-text">
+            <div class="header-kicker">Operations</div>
+            <h1>Playground Oil Rig</h1>
+            <span class="subtitle">Oil Buyer</span>
+          </div>
+
+          <div class="contract-body">
+            <div id="buyer-shop-view">
+              <div class="section">
+                <h3>Shop</h3>
+                <div class="shop-card">
+                  <div class="shop-item">
+                    <div class="shop-item-media" aria-hidden="true">
+                      <img id="buyer-item-img" class="shop-item-img" alt="Oil barrel" />
+                    </div>
+                    <div class="shop-item-text">
+                      <div class="shop-item-title">Oil Barrel</div>
+                      <div class="shop-item-sub">Sell your barrels for cash.</div>
+                    </div>
+                  </div>
+                  <div class="shop-price" id="buyer-unit-price">$0</div>
+                </div>
+              </div>
+
+              <div class="section controls">
+                <h3>Sell</h3>
+                <div class="shop-qty">
+                  <div class="shop-qty-label">Quantity</div>
+                  <div class="shop-qty-controls">
+                    <button id="btn-buyer-qty-minus" class="btn secondary" type="button" aria-label="Decrease quantity">-</button>
+                    <div id="buyer-qty-value" class="shop-qty-value">1</div>
+                    <button id="btn-buyer-qty-plus" class="btn secondary" type="button" aria-label="Increase quantity">+</button>
+                  </div>
+                  <div class="shop-total">Total: <span id="buyer-total-price">$0</span></div>
+                </div>
+
+                <div class="control-row">
+                  <button id="btn-buyer-sell" class="btn primary" type="button">Purchase</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button id="btn-buyer-close" class="btn primary close-below" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rename rig popup -->
+  <div id="name-popup" class="popup hidden" role="dialog" aria-modal="true" aria-label="Rename rig">
+    <div class="popup-backdrop"></div>
+    <div class="popup-window">
+      <div class="popup-title">Rename Rig</div>
+      <div class="popup-sub">This name is only visible to you.</div>
+
+      <div class="name-popup-row">
+        <input id="name-popup-input" class="name-input" type="text" maxlength="64" placeholder="Enter rig name..." autocomplete="off" spellcheck="false" />
+      </div>
+
+      <div class="popup-actions">
+        <button id="name-popup-cancel" class="btn secondary" type="button">Cancel</button>
+        <button id="name-popup-save" class="btn primary" type="button">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Confirmation">
+    <div id="modal-backdrop" class="modal-backdrop"></div>
+    <div class="modal-window">
+      <div class="modal-header">
+        <div class="modal-title" id="modal-title">Confirmation</div>
+      </div>
+      <div class="modal-body">
+        <div class="modal-message" id="modal-message">Are you sure?</div>
+      </div>
+      <div class="modal-footer">
+        <button id="modal-cancel" class="btn secondary" type="button">
+          <span id="modal-cancel-label">Cancel</span>
+        </button>
+        <button id="modal-confirm" class="btn primary" type="button">
+          <span id="modal-confirm-label">Confirm</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
