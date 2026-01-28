@@ -1,5 +1,4 @@
 L3GiTOilRig — Playground Oil Rig
-README.txt
 
 Overview
 --------
@@ -229,3 +228,4 @@ Resource version is listed in fxmanifest.lua.
 Notes
 -----
 - This README describes the current configured defaults. If you change config.lua values, the gameplay loop (costs, yields, timing) changes accordingly.
+
