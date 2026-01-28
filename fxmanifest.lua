@@ -2,8 +2,8 @@ fx_version 'cerulean'
 game 'gta5'
 
 name 'L3GiTOilRig'
-author 'Devøn & Copilot'
-description 'Modular Oil Rig Operator job with custom UI & notifications'
+author 'L3GiT'
+description 'Modular Oil Rig Operator Job w/Ccustom UI & Notifications'
 version '1.0.1'
 
 lua54 'yes'
@@ -37,3 +37,4 @@ dependencies {
     'ox_inventory',
     'oxmysql'
 }
+
