@@ -15,6 +15,10 @@ local function trim(s)
 end
 
 local function getPlayerKey(src)
+    if type(src) ~= 'number' then
+        return tostring(src)
+    end
+
     if GetPlayerIdentifierByType then
         local license = GetPlayerIdentifierByType(src, 'license')
         if license and license ~= '' then return license end
@@ -50,7 +54,7 @@ function DB.Init()
                     local function ensureTables()
                         MySQL.query([[
                             CREATE TABLE IF NOT EXISTS l3git_oilrig_state (
-                                rig_id VARCHAR(64) NOT NULL,
+                                rig_id VARCHAR(128) NOT NULL,
                                 fuel_cans INT NOT NULL DEFAULT 0,
                                 is_running TINYINT(1) NOT NULL DEFAULT 0,
                                 start_time BIGINT NOT NULL DEFAULT 0,
@@ -59,6 +63,25 @@ function DB.Init()
                                 last_fuel_used INT NOT NULL DEFAULT 0,
                                 updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                                 PRIMARY KEY (rig_id)
+                            )
+                        ]])
+
+                        -- Best-effort widen for existing installs (no-op if already wide).
+                        MySQL.query('ALTER TABLE l3git_oilrig_state MODIFY rig_id VARCHAR(128) NOT NULL')
+
+                        -- Per-player state table (each player has their own instance of each rig).
+                        MySQL.query([[
+                            CREATE TABLE IF NOT EXISTS l3git_oilrig_state_personal (
+                                identifier VARCHAR(96) NOT NULL,
+                                rig_id VARCHAR(64) NOT NULL,
+                                fuel_cans INT NOT NULL DEFAULT 0,
+                                is_running TINYINT(1) NOT NULL DEFAULT 0,
+                                start_time BIGINT NOT NULL DEFAULT 0,
+                                end_time BIGINT NOT NULL DEFAULT 0,
+                                barrels_ready INT NOT NULL DEFAULT 0,
+                                last_fuel_used INT NOT NULL DEFAULT 0,
+                                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                                PRIMARY KEY (identifier, rig_id)
                             )
                         ]])
 
@@ -89,7 +112,7 @@ function DB.Init()
     local function ensureTables()
         MySQL.query([[
             CREATE TABLE IF NOT EXISTS l3git_oilrig_state (
-                rig_id VARCHAR(64) NOT NULL,
+                rig_id VARCHAR(128) NOT NULL,
                 fuel_cans INT NOT NULL DEFAULT 0,
                 is_running TINYINT(1) NOT NULL DEFAULT 0,
                 start_time BIGINT NOT NULL DEFAULT 0,
@@ -98,6 +121,25 @@ function DB.Init()
                 last_fuel_used INT NOT NULL DEFAULT 0,
                 updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 PRIMARY KEY (rig_id)
+            )
+        ]])
+
+        -- Best-effort widen for existing installs (no-op if already wide).
+        MySQL.query('ALTER TABLE l3git_oilrig_state MODIFY rig_id VARCHAR(128) NOT NULL')
+
+        -- Per-player state table (each player has their own instance of each rig).
+        MySQL.query([[
+            CREATE TABLE IF NOT EXISTS l3git_oilrig_state_personal (
+                identifier VARCHAR(96) NOT NULL,
+                rig_id VARCHAR(64) NOT NULL,
+                fuel_cans INT NOT NULL DEFAULT 0,
+                is_running TINYINT(1) NOT NULL DEFAULT 0,
+                start_time BIGINT NOT NULL DEFAULT 0,
+                end_time BIGINT NOT NULL DEFAULT 0,
+                barrels_ready INT NOT NULL DEFAULT 0,
+                last_fuel_used INT NOT NULL DEFAULT 0,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (identifier, rig_id)
             )
         ]])
 
@@ -142,7 +184,7 @@ function DB.LoadAllRigStates()
     return map
 end
 
-function DB.LoadRigState(rigId)
+local function loadRigStateLegacy(rigId)
     if not rigId then return nil end
     if not DB.IsReady() or not MySQL or not MySQL.query then return nil end
 
@@ -158,7 +200,44 @@ function DB.LoadRigState(rigId)
     return nil
 end
 
-local function buildStateParams(rigId, rig)
+-- Per-player load. Backwards compatible with older calls: DB.LoadRigState(rigId)
+function DB.LoadRigState(src, rigId)
+    -- Legacy signature: (rigId)
+    if rigId == nil then
+        return loadRigStateLegacy(src)
+    end
+
+    if not rigId then return nil end
+    if not DB.IsReady() or not MySQL or not MySQL.query then return nil end
+
+    local key = getPlayerKey(src)
+
+    local rows = MySQL.query.await(
+        'SELECT rig_id, fuel_cans, is_running, start_time, end_time, barrels_ready, last_fuel_used FROM l3git_oilrig_state_personal WHERE identifier = ? AND rig_id = ? LIMIT 1',
+        { tostring(key), tostring(rigId) }
+    )
+
+    if rows and rows[1] then
+        return rows[1]
+    end
+
+    return nil
+end
+
+local function buildStateParamsPersonal(identifier, rigId, rig)
+    return {
+        tostring(identifier),
+        tostring(rigId),
+        tonumber(rig.fuelCans or 0) or 0,
+        (rig.isRunning and 1) or 0,
+        tonumber(rig.startTime or 0) or 0,
+        tonumber(rig.endTime or 0) or 0,
+        tonumber(rig.barrelsReady or 0) or 0,
+        tonumber(rig.lastFuelUsed or 0) or 0,
+    }
+end
+
+local function buildStateParamsLegacy(rigId, rig)
     return {
         tostring(rigId),
         tonumber(rig.fuelCans or 0) or 0,
@@ -169,6 +248,20 @@ local function buildStateParams(rigId, rig)
         tonumber(rig.lastFuelUsed or 0) or 0,
     }
 end
+
+local STATE_UPSERT_SQL_PERSONAL = [[
+    INSERT INTO l3git_oilrig_state_personal
+        (identifier, rig_id, fuel_cans, is_running, start_time, end_time, barrels_ready, last_fuel_used)
+    VALUES
+        (?, ?, ?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+        fuel_cans = VALUES(fuel_cans),
+        is_running = VALUES(is_running),
+        start_time = VALUES(start_time),
+        end_time = VALUES(end_time),
+        barrels_ready = VALUES(barrels_ready),
+        last_fuel_used = VALUES(last_fuel_used)
+]]
 
 local STATE_UPSERT_SQL = [[
     INSERT INTO l3git_oilrig_state
@@ -185,18 +278,42 @@ local STATE_UPSERT_SQL = [[
 ]]
 
 -- Fire-and-forget save (safe to call during shutdown hooks).
-function DB.SaveRigState(rigId, rig)
+-- Fire-and-forget save. Backwards compatible:
+-- - DB.SaveRigState(rigId, rig) (legacy shared rig)
+-- - DB.SaveRigState(src, rigId, rig) (personal rig)
+function DB.SaveRigState(a, b, c)
     if not DB.IsReady() or not MySQL or not MySQL.query then return end
-    if not rigId or not rig then return end
 
-    MySQL.query(STATE_UPSERT_SQL, buildStateParams(rigId, rig))
+    -- Legacy signature.
+    if c == nil then
+        local rigId, rig = a, b
+        if not rigId or not rig then return end
+        MySQL.query(STATE_UPSERT_SQL, buildStateParamsLegacy(rigId, rig))
+        return
+    end
+
+    local src, rigId, rig = a, b, c
+    if not rigId or not rig then return end
+    local key = getPlayerKey(src)
+    MySQL.query(STATE_UPSERT_SQL_PERSONAL, buildStateParamsPersonal(key, rigId, rig))
 end
 
 -- Synchronous save (use during gameplay so a restart can't drop the write).
-function DB.SaveRigStateAwait(rigId, rig)
+function DB.SaveRigStateAwait(a, b, c)
     if not DB.IsReady() or not MySQL or not MySQL.query then return end
+
+    -- Legacy signature.
+    if c == nil then
+        local rigId, rig = a, b
+        if not rigId or not rig then return end
+        MySQL.query.await(STATE_UPSERT_SQL, buildStateParamsLegacy(rigId, rig))
+        return
+    end
+
+    local src, rigId, rig = a, b, c
     if not rigId or not rig then return end
-    MySQL.query.await(STATE_UPSERT_SQL, buildStateParams(rigId, rig))
+    local key = getPlayerKey(src)
+    MySQL.query.await(STATE_UPSERT_SQL_PERSONAL, buildStateParamsPersonal(key, rigId, rig))
 end
 
 function DB.GetRigName(src, rigId)
@@ -274,6 +391,9 @@ function DB.MigrateRigId(oldRigId, newRigId)
     if not (existsNew and existsNew[1] and existsNew[1].rig_id) then
         MySQL.query('UPDATE l3git_oilrig_state SET rig_id = ? WHERE rig_id = ?', { newRigId, oldRigId })
     end
+
+    -- Personal state table: move rows to the new rig_id.
+    MySQL.query('UPDATE l3git_oilrig_state_personal SET rig_id = ? WHERE rig_id = ?', { newRigId, oldRigId })
 
     -- Names table: upsert rows under the new rig_id, then remove old rows.
     local nameRows = MySQL.query.await(

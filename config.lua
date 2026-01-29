@@ -33,7 +33,7 @@ Config.BarrelItem = 'oil_barrel'  -- unchanged
 
 -- Prices
 Config.FuelCost = 2000            -- cost per rig_fuel can
-Config.BarrelSellPrice = 30000    -- sale price per oil_barrel
+Config.BarrelSellPrice = 8976     -- tuned: ~$999,936 net over 7 days if kept running (336 barrels/week)
 
 -- Fueling
 Config.MaxFuelCansPerCycle = 3    -- fuel required per production cycle
@@ -50,8 +50,8 @@ Config.MaxBarrelsStored = 10      -- max barrels that can be stored at the rig
 --===================== PRODUCTION ========================--
 --========================================================--
 
--- Production time: 30 minutes per cycle (3 fuel)
-Config.ProductionTime = 30 * 60 * 1000
+-- Production time: 20 minutes per cycle (3 fuel)
+Config.ProductionTime = 20 * 60 * 1000
 
 -- Fuel → Yield mapping
 Config.FuelToYield = {

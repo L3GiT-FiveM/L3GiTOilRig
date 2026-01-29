@@ -3,6 +3,76 @@ local rigs = {}
 local fuelEventCooldown = {}
 local DB = L3GiTOilRigDB
 
+local PERSONAL_RIG_DELIM = '::'
+
+local function getPlayerKey(src)
+    if GetPlayerIdentifierByType then
+        local license = GetPlayerIdentifierByType(src, 'license')
+        if license and license ~= '' then return license end
+    end
+
+    local ids = GetPlayerIdentifiers(src)
+    if ids and ids[1] then return ids[1] end
+
+    return tostring(src)
+end
+
+local function findOnlineSrcByKey(key)
+    key = tostring(key or '')
+    if key == '' then return nil end
+
+    for _, pid in ipairs(GetPlayers()) do
+        if getPlayerKey(pid) == key then
+            return tonumber(pid)
+        end
+    end
+
+    return nil
+end
+
+local function newRigState()
+    return {
+        fuelCans = 0,
+        isRunning = false,
+        startTime = 0,
+        endTime = 0,
+        barrelsReady = 0,
+        lastFuelUsed = 0,
+        fuelEmptyNotified = false,
+        _dbLoaded = false,
+        _dbLoadAttemptAt = 0,
+        _scheduledEnd = 0,
+        _baseRigId = '',
+        _ownerKey = ''
+    }
+end
+
+local function resolveRigIds(src, rigId)
+    local baseId = tostring(rigId or '')
+    if baseId == '' then return nil, nil, nil end
+
+    -- If a client ever sends a personal id, normalize to its base component.
+    local cut = baseId:find(PERSONAL_RIG_DELIM, 1, true)
+    if cut then
+        baseId = baseId:sub(1, cut - 1)
+    end
+
+    local ownerKey = getPlayerKey(src)
+    local personalId = ('%s%s%s'):format(baseId, PERSONAL_RIG_DELIM, ownerKey)
+    return baseId, personalId, ownerKey
+end
+
+local function getRigForPlayer(src, rigId)
+    local baseId, personalId, ownerKey = resolveRigIds(src, rigId)
+    if not baseId or not personalId or not ownerKey then return nil, nil, nil, nil end
+
+    rigs[personalId] = rigs[personalId] or newRigState()
+    local rig = rigs[personalId]
+    rig._baseRigId = baseId
+    rig._ownerKey = ownerKey
+    return rig, baseId, personalId, ownerKey
+end
+
 local function dbg(fmt, ...)
     if not (Config and Config.Debug) then return end
 
@@ -18,6 +88,9 @@ local function dbg(fmt, ...)
 end
 
 -- Forward declarations (used by the completion scheduler).
+local nowMs
+local advanceRigToNow
+local scheduleCycleCompletion
 local completeProductionIfFinished
 local startCycle
 local maybeAutoContinue
@@ -73,12 +146,12 @@ AddEventHandler('onResourceStop', function(resourceName)
     if not (DB and DB.SaveRigState) then return end
     if not dbReady() then return end
 
-    for rigId, rig in pairs(rigs or {}) do
-        if rigId and rig then
+    for personalRigId, rig in pairs(rigs or {}) do
+        if personalRigId and rig then
             -- Best-effort flush so active cycles resume with correct endTime.
             pcall(function()
                 -- Don't use await here; shutdown hooks are not a safe place to yield.
-                DB.SaveRigState(rigId, rig)
+                DB.SaveRigState(personalRigId, rig)
             end)
         end
     end
@@ -112,18 +185,14 @@ local function normalizeRigRuntime(rigId, rig)
         rig.startTime = 0
         rig.endTime = 0
         rig.lastFuelUsed = 0
-        dbSave(rigId, rig)
-        broadcastRigState(rigId, rig)
         return true
     end
 
     return false
 end
 
-local function ensureRigLoaded(rigId)
-    if not rigId then return false end
-    local rig = rigs[rigId]
-    if not rig then return false end
+local function ensureRigLoaded(src, baseRigId, personalRigId, rig)
+    if not baseRigId or not personalRigId or not rig then return false end
 
     if rig._dbLoaded then
         return true
@@ -132,7 +201,7 @@ local function ensureRigLoaded(rigId)
     if not dbReady() then
         local now = nowMs()
         if not rig._dbgNoDbAt or (now - rig._dbgNoDbAt) > 10000 then
-            dbg('ensureRigLoaded(%s) skipped: DB not ready', tostring(rigId))
+            dbg('ensureRigLoaded(%s) skipped: DB not ready', tostring(personalRigId))
             rig._dbgNoDbAt = now
         end
         return false
@@ -149,44 +218,46 @@ local function ensureRigLoaded(rigId)
         return false
     end
 
-    dbg('Loading rig state from DB for %s', tostring(rigId))
-    local row = DB.LoadRigState(rigId)
+    dbg('Loading rig state from DB for %s (base=%s)', tostring(personalRigId), tostring(baseRigId))
+
+    -- Primary: legacy table keyed by personalRigId.
+    local row = DB.LoadRigState(personalRigId)
+
+    -- Fallback: if we previously used the per-player table (identifier + baseRigId), import it once.
     if not row then
-        dbg('No DB row found for rig %s', tostring(rigId))
+        row = DB.LoadRigState(src, baseRigId)
+        if row then
+            dbg('Imported rig state from personal table for base rig %s into %s', tostring(baseRigId), tostring(personalRigId))
+            applySavedRowToRig(rig, row)
+            rig._dbLoaded = true
+            normalizeRigRuntime(personalRigId, rig)
+            dbSave(personalRigId, rig)
+            return true
+        end
+    end
+
+    if not row then
+        dbg('No DB row found for rig %s', tostring(personalRigId))
         return false
     end
 
     applySavedRowToRig(rig, row)
     rig._dbLoaded = true
 
-    dbg('Loaded rig %s: fuel=%s running=%s barrels=%s start=%s end=%s', tostring(rigId), tostring(rig.fuelCans), tostring(rig.isRunning), tostring(rig.barrelsReady), tostring(rig.startTime), tostring(rig.endTime))
+    dbg('Loaded rig %s: fuel=%s running=%s barrels=%s start=%s end=%s', tostring(personalRigId), tostring(rig.fuelCans), tostring(rig.isRunning), tostring(rig.barrelsReady), tostring(rig.startTime), tostring(rig.endTime))
 
-    normalizeRigRuntime(rigId, rig)
+    normalizeRigRuntime(personalRigId, rig)
 
     -- Catch up and re-schedule, if needed.
     if rig.isRunning then
-        advanceRigToNow(rigId, rig, now)
+        advanceRigToNow(personalRigId, rig, now)
         if rig.isRunning and (rig.endTime or 0) > 0 and rig._scheduledEnd ~= rig.endTime then
             rig._scheduledEnd = rig.endTime
-            scheduleCycleCompletion(rigId, rig.endTime)
+            scheduleCycleCompletion(personalRigId, rig._ownerKey, rig.endTime)
         end
     end
 
     return true
-end
-
-for _, rig in ipairs(Config.RigLocations) do
-    rigs[rig.id] = {
-        fuelCans = 0,
-        isRunning = false,
-        startTime = 0,
-        endTime = 0,
-        barrelsReady = 0,
-        lastFuelUsed = 0,
-        _dbLoaded = false,
-        _dbLoadAttemptAt = 0,
-        _scheduledEnd = 0
-    }
 end
 
 local function calculateYield(fuelCans)
@@ -199,17 +270,18 @@ local function getMaxStored()
     return tonumber(Config.MaxBarrelsStored) or 10
 end
 
-local function nowMs()
+nowMs = function()
     return os.time() * 1000
 end
 
-local function broadcastRigState(rigId, rig)
+local function sendRigStateToPlayer(src, rigId, rig)
+    if not src then return end
     local remaining = 0
     if rig.isRunning then
         remaining = math.max((rig.endTime or 0) - (os.time() * 1000), 0)
     end
 
-    TriggerClientEvent('L3GiTOilRig:client:updateRigState', -1, rigId, {
+    TriggerClientEvent('L3GiTOilRig:client:updateRigState', src, rigId, {
         fuelCans = rig.fuelCans or 0,
         isRunning = rig.isRunning or false,
         remaining = remaining,
@@ -217,7 +289,7 @@ local function broadcastRigState(rigId, rig)
     })
 end
 
-local function maybeNotifyFuelEmpty(rigId, rig)
+local function maybeNotifyFuelEmpty(src, rigId, rig)
     if not rigId or not rig then return end
 
     local fuel = tonumber(rig.fuelCans or 0) or 0
@@ -236,7 +308,8 @@ local function maybeNotifyFuelEmpty(rigId, rig)
 
     rig.fuelEmptyNotified = true
 
-    TriggerClientEvent('L3GiTOilRig:client:notify', -1, {
+    if not src then return end
+    TriggerClientEvent('L3GiTOilRig:client:notify', src, {
         title = titleMain(),
         message = 'Your oil rig is out of fuel. Refill it to keep producing.',
         type = 'info',
@@ -244,24 +317,26 @@ local function maybeNotifyFuelEmpty(rigId, rig)
     })
 end
 
-local function scheduleCycleCompletion(rigId, expectedEnd)
-    local rig = rigs[rigId]
-    if not rig then return end
-    if not rig.isRunning then return end
+scheduleCycleCompletion = function(personalRigId, ownerKey, expectedEnd)
+    if not personalRigId or not ownerKey then return end
+    local rig = rigs[personalRigId]
+    if not rig or not rig.isRunning then return end
 
     local remaining = math.max((expectedEnd or 0) - (os.time() * 1000), 0)
     SetTimeout(remaining + 150, function()
-        local r = rigs[rigId]
-        if not r then return end
-        if not r.isRunning then return end
+        local r = rigs[personalRigId]
+        if not r or not r.isRunning then return end
         if r.endTime ~= expectedEnd then return end
 
         if completeProductionIfFinished(r) then
             -- Use up remaining fuel automatically before stopping.
-            if not (maybeAutoContinue and maybeAutoContinue(rigId, r, expectedEnd)) then
-                maybeNotifyFuelEmpty(rigId, r)
-                dbSave(rigId, r)
-                broadcastRigState(rigId, r)
+            if not (maybeAutoContinue and maybeAutoContinue(personalRigId, ownerKey, r, expectedEnd)) then
+                local onlineSrc = findOnlineSrcByKey(ownerKey)
+                maybeNotifyFuelEmpty(onlineSrc, r._baseRigId, r)
+                dbSave(personalRigId, r)
+                if onlineSrc then
+                    sendRigStateToPlayer(onlineSrc, r._baseRigId, r)
+                end
             end
         end
     end)
@@ -280,7 +355,7 @@ local function beginCycleAt(rig, startAt)
     return true
 end
 
-local function advanceRigToNow(rigId, rig, at)
+advanceRigToNow = function(rigId, rig, at)
     if not rigId or not rig or not rig.isRunning then return false end
 
     local t = tonumber(at or 0) or nowMs()
@@ -309,8 +384,7 @@ local function advanceRigToNow(rigId, rig, at)
     end
 
     if changed then
-        dbSave(rigId, rig)
-        broadcastRigState(rigId, rig)
+        -- Persisting is handled by caller (per-player) to avoid cross-player leakage.
     end
 
     return changed
@@ -347,49 +421,7 @@ CreateThread(function()
         end
     end
 
-    local saved = DB.LoadAllRigStates()
-    local now = nowMs()
-
-    do
-        local count = 0
-        for _ in pairs(saved or {}) do count = count + 1 end
-        dbg('Loaded %d saved rig state row(s) from DB', count)
-    end
-
-    for rigId, row in pairs(saved or {}) do
-        rigs[rigId] = rigs[rigId] or {
-            fuelCans = 0,
-            isRunning = false,
-            startTime = 0,
-            endTime = 0,
-            barrelsReady = 0,
-            lastFuelUsed = 0
-        }
-
-        local rig = rigs[rigId]
-        applySavedRowToRig(rig, row)
-        rig._dbLoaded = true
-
-        dbg('Applied saved state for %s: fuel=%s running=%s barrels=%s', tostring(rigId), tostring(rig.fuelCans), tostring(rig.isRunning), tostring(rig.barrelsReady))
-
-        -- Push current persisted values to clients (fuel/barrels/time) after restart.
-        broadcastRigState(rigId, rig)
-
-        if rig.isRunning then
-            advanceRigToNow(rigId, rig, now)
-
-            if rig.isRunning then
-                rig._scheduledEnd = rig.endTime
-                dbg('Scheduling cycle completion for %s at %s', tostring(rigId), tostring(rig.endTime))
-                scheduleCycleCompletion(rigId, rig.endTime)
-                broadcastRigState(rigId, rig)
-            else
-                maybeNotifyFuelEmpty(rigId, rig)
-                dbSave(rigId, rig)
-                broadcastRigState(rigId, rig)
-            end
-        end
-    end
+    -- Per-player rigs are loaded on-demand when a player interacts.
 end)
 
 completeProductionIfFinished = function(rig)
@@ -433,16 +465,13 @@ startCycle = function(rigId, rig, ignoreStorage)
 
     beginCycleAt(rig, nowMs())
 
-    dbSave(rigId, rig)
-    broadcastRigState(rigId, rig)
-
-    scheduleCycleCompletion(rigId, rig.endTime)
+    -- Persist/notify handled by caller (per-player)
 
     return true
 end
 
-maybeAutoContinue = function(rigId, rig, startAt)
-    if not rigId or not rig then return false end
+maybeAutoContinue = function(rigId, ownerKey, rig, startAt)
+    if not rigId or not ownerKey or not rig then return false end
     -- Auto-continue should respect storage limits.
     if not canStartCycle(rig, false) then return false end
 
@@ -454,8 +483,11 @@ maybeAutoContinue = function(rigId, rig, startAt)
 
     beginCycleAt(rig, startTime)
     dbSave(rigId, rig)
-    broadcastRigState(rigId, rig)
-    scheduleCycleCompletion(rigId, rig.endTime)
+    local onlineSrc = findOnlineSrcByKey(ownerKey)
+    if onlineSrc then
+        sendRigStateToPlayer(onlineSrc, rig._baseRigId, rig)
+    end
+    scheduleCycleCompletion(rigId, ownerKey, rig.endTime)
     return true
 end
 
@@ -471,7 +503,7 @@ RegisterNetEvent('L3GiTOilRig:server:buyDiesel', function(amount)
 
     local current = exports.ox_inventory:GetItem(src, Config.FuelItem, nil, true) or 0
     current = tonumber(current or 0) or 0
-    local maxHold = 9
+    local maxHold = tonumber(Config.MaxFuelCansStored) or 9
     if current >= maxHold then
         dbg('buyDiesel blocked: current=%d maxHold=%d', current, maxHold)
         Notify(src, {
@@ -525,12 +557,22 @@ end)
 RegisterNetEvent('L3GiTOilRig:server:fuelRig', function(rigId, cansToUse)
     local src = source
     dbg('fuelRig src=%s rigId=%s cansToUse=%s', tostring(src), tostring(rigId), tostring(cansToUse))
-    ensureRigLoaded(rigId)
-    local rig = rigs[rigId]
-    if not rig then
-        dbg('fuelRig failed: rig not found (%s)', tostring(rigId))
-        return
+    local rig, baseId, personalId, ownerKey = getRigForPlayer(src, rigId)
+    if not rig then return end
+
+    -- Ensure SQL is online so we can persist and avoid state desync.
+    if (MySQL and MySQL.query) and not dbReady() then
+        if not waitForDbReady(15000) then
+            Notify(src, {
+                title = titleMain(),
+                message = 'Rig database is still loading. Try again in a moment.',
+                type = 'error'
+            })
+            return
+        end
     end
+
+    ensureRigLoaded(src, baseId, personalId, rig)
 
     do
         local now = GetGameTimer()
@@ -565,7 +607,16 @@ RegisterNetEvent('L3GiTOilRig:server:fuelRig', function(rigId, cansToUse)
         return
     end
 
-    exports.ox_inventory:RemoveItem(src, Config.FuelItem, 1)
+    local removed = exports.ox_inventory:RemoveItem(src, Config.FuelItem, 1)
+    if not removed then
+        dbg('fuelRig failed: RemoveItem failed (item=%s src=%s)', tostring(Config.FuelItem), tostring(src))
+        Notify(src, {
+            title = titleMain(),
+            message = 'Fueling failed (inventory remove failed). Try again.',
+            type = 'error'
+        })
+        return
+    end
     rig.fuelCans = math.min((rig.fuelCans or 0) + 1, capacity)
 
     dbg('fuelRig applied: rigId=%s fuelNow=%s/%s', tostring(rigId), tostring(rig.fuelCans), tostring(capacity))
@@ -581,8 +632,9 @@ RegisterNetEvent('L3GiTOilRig:server:fuelRig', function(rigId, cansToUse)
         type = 'success'
     })
 
-    dbSave(rigId, rig)
-    broadcastRigState(rigId, rig)
+    dbg('fuelRig saving state: baseId=%s personalId=%s fuel=%s', tostring(baseId), tostring(personalId), tostring(rig.fuelCans))
+    dbSave(personalId, rig)
+    sendRigStateToPlayer(src, baseId, rig)
 end)
 
 RegisterNetEvent('L3GiTOilRig:server:startCycle', function(rigId)
@@ -600,8 +652,8 @@ RegisterNetEvent('L3GiTOilRig:server:startCycle', function(rigId)
         return
     end
 
-    local id = tostring(rigId or '')
-    if id == '' then
+    local baseId = tostring(rigId or '')
+    if baseId == '' then
         dbg('startCycle blocked: invalid rig id')
         Notify(src, {
             title = titleMain(),
@@ -611,34 +663,19 @@ RegisterNetEvent('L3GiTOilRig:server:startCycle', function(rigId)
         return
     end
 
-    if not rigs[id] then
-        rigs[id] = {
-            fuelCans = 0,
-            isRunning = false,
-            startTime = 0,
-            endTime = 0,
-            barrelsReady = 0,
-            lastFuelUsed = 0,
-            _dbLoaded = false,
-            _dbLoadAttemptAt = 0,
-            _scheduledEnd = 0
-        }
-    end
-
-    ensureRigLoaded(id)
-
-    local rig = rigs[id]
+    local rig, baseId2, personalId, ownerKey = getRigForPlayer(src, baseId)
+    ensureRigLoaded(src, baseId2, personalId, rig)
     if not rig then
         Notify(src, {
             title = titleMain(),
-            message = ('Start failed: rig not found (%s).'):format(id),
+            message = ('Start failed: rig not found (%s).'):format(baseId),
             type = 'error'
         })
         return
     end
 
     if rig.isRunning then
-        dbg('startCycle blocked: already running (%s)', tostring(id))
+        dbg('startCycle blocked: already running (%s)', tostring(baseId))
         Notify(src, { title = titleMain(), message = 'This rig is already running.', type = 'error' })
         return
     end
@@ -646,7 +683,7 @@ RegisterNetEvent('L3GiTOilRig:server:startCycle', function(rigId)
     local need = getFuelBatchSize()
     local fuel = tonumber(rig.fuelCans or 0) or 0
     if fuel < need then
-        dbg('startCycle blocked: insufficient fuel (%s fuel=%d need=%d)', tostring(id), fuel, need)
+        dbg('startCycle blocked: insufficient fuel (%s fuel=%d need=%d)', tostring(baseId), fuel, need)
         Notify(src, {
             title = titleMain(),
             message = ('You need at least %d gal fuel to start a cycle (rig has %d).'):format(need, fuel),
@@ -657,33 +694,39 @@ RegisterNetEvent('L3GiTOilRig:server:startCycle', function(rigId)
 
     -- Manual start: allow starting as long as fuel is available (>= 3),
     -- even if storage is currently full. Output will cap at the storage limit.
-    if startCycle(id, rig, true) then
-        dbg('startCycle started: rig=%s start=%s end=%s fuelNow=%s', tostring(id), tostring(rig.startTime), tostring(rig.endTime), tostring(rig.fuelCans))
+    if startCycle(personalId, rig, true) then
+        dbg('startCycle started: rig=%s start=%s end=%s fuelNow=%s', tostring(baseId), tostring(rig.startTime), tostring(rig.endTime), tostring(rig.fuelCans))
         Notify(src, { title = titleMain(), message = ('Cycle started (used %d gal).'):format(need), type = 'success' })
+
+        dbSave(personalId, rig)
+        sendRigStateToPlayer(src, baseId2, rig)
+        scheduleCycleCompletion(personalId, ownerKey, rig.endTime)
     else
         local storage = tonumber(rig.barrelsReady or 0) or 0
         local maxStorage = getMaxStored()
-        dbg('startCycle failed: rig=%s fuel=%d need=%d storage=%d/%d', tostring(id), fuel, need, storage, maxStorage)
+        dbg('startCycle failed: rig=%s fuel=%d need=%d storage=%d/%d', tostring(baseId), fuel, need, storage, maxStorage)
         Notify(src, {
             title = titleMain(),
-            message = ('Start failed (rig=%s, fuel=%d, need=%d, storage=%d/%d).'):format(id, fuel, need, storage, maxStorage),
+            message = ('Start failed (rig=%s, fuel=%d, need=%d, storage=%d/%d).'):format(baseId, fuel, need, storage, maxStorage),
             type = 'error'
         })
-        broadcastRigState(id, rig)
+        sendRigStateToPlayer(src, baseId2, rig)
     end
 end)
 
 RegisterNetEvent('L3GiTOilRig:server:collectBarrel', function(rigId)
     local src = source
     dbg('collectBarrel src=%s rigId=%s', tostring(src), tostring(rigId))
-    ensureRigLoaded(rigId)
-    local rig = rigs[rigId]
+    local rig, baseId, personalId, ownerKey = getRigForPlayer(src, rigId)
     if not rig then return end
+    ensureRigLoaded(src, baseId, personalId, rig)
 
     if rig.isRunning and (rig.endTime or 0) > 0 then
-        advanceRigToNow(rigId, rig, nowMs())
+        if advanceRigToNow(personalId, rig, nowMs()) then
+            dbSave(personalId, rig)
+        end
         if not rig.isRunning then
-            maybeNotifyFuelEmpty(rigId, rig)
+            maybeNotifyFuelEmpty(src, baseId, rig)
         end
     end
 
@@ -719,8 +762,8 @@ RegisterNetEvent('L3GiTOilRig:server:collectBarrel', function(rigId)
         type = 'success'
     })
 
-    dbSave(rigId, rig)
-    broadcastRigState(rigId, rig)
+    dbSave(personalId, rig)
+    sendRigStateToPlayer(src, baseId, rig)
 end)
 
 RegisterNetEvent('L3GiTOilRig:server:sellBarrel', function()
@@ -782,30 +825,24 @@ end)
 lib.callback.register('L3GiTOilRig:server:getRigState', function(src, rigId)
     -- If the resource just started, give SQL a moment to come online so we don't return a default state.
     waitForDbReady(15000)
-    ensureRigLoaded(rigId)
-    local rig = rigs[rigId]
-    if not rig then
-        rigs[rigId] = {
-            fuelCans = 0,
-            isRunning = false,
-            startTime = 0,
-            endTime = 0,
-            barrelsReady = 0,
-            lastFuelUsed = 0,
-            _dbLoaded = false,
-            _dbLoadAttemptAt = 0,
-            _scheduledEnd = 0
-        }
-        rig = rigs[rigId]
-    end
+    local rig, baseId, personalId, ownerKey = getRigForPlayer(src, rigId)
+    if not rig then return nil end
+
+    ensureRigLoaded(src, baseId, personalId, rig)
 
     local now = nowMs()
     local remaining = 0
 
-    normalizeRigRuntime(rigId, rig)
+    normalizeRigRuntime(personalId, rig)
 
     if rig.isRunning and (rig.endTime or 0) > 0 then
-        advanceRigToNow(rigId, rig, now)
+        if advanceRigToNow(personalId, rig, now) then
+            dbSave(personalId, rig)
+            if rig.isRunning and (rig.endTime or 0) > 0 and rig._scheduledEnd ~= rig.endTime then
+                rig._scheduledEnd = rig.endTime
+                scheduleCycleCompletion(personalId, ownerKey, rig.endTime)
+            end
+        end
     end
 
     if rig.isRunning then

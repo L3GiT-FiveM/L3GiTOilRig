@@ -788,7 +788,8 @@ body {
 }
 
 .progress-track {
-  height: 10px;
+  /* ~1cm thick (approx. 38px on standard displays) */
+  height: 38px;
   border-radius: 999px;
   border: 1px solid rgba(202, 162, 92, 0.22);
   background: rgba(0, 0, 0, 0.35);
@@ -807,6 +808,7 @@ body {
 }
 
 .progress-marker {
+  display: none;
   position: absolute;
   top: 50%;
   left: 0%;

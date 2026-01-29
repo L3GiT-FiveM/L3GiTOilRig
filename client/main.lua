@@ -86,7 +86,8 @@ local function openFuelSupplierUI()
         config = {
             fuelCost = Config.FuelCost or 0,
             currentFuel = currentFuel or 0,
-            maxHold = 9,
+            maxHold = Config.MaxFuelCansStored or 9,
+            fuelItem = Config.FuelItem,
             uiKicker = (Config.Ui and Config.Ui.opsKicker) or 'Operations',
             uiTitle = (Config.Ui and Config.Ui.mainTitle) or JOB_NAME,
             uiSubtitle = (Config.Ui and Config.Ui.supplierSubtitle) or 'Fuel Supplier'
@@ -115,6 +116,7 @@ local function openOilBuyerUI()
         config = {
             barrelPrice = Config.BarrelSellPrice or 0,
             currentBarrels = currentBarrels or 0,
+            barrelItem = Config.BarrelItem,
             uiKicker = (Config.Ui and Config.Ui.opsKicker) or 'Operations',
             uiTitle = (Config.Ui and Config.Ui.mainTitle) or JOB_NAME,
             uiSubtitle = (Config.Ui and Config.Ui.buyerSubtitle) or 'Oil Buyer'
@@ -125,6 +127,7 @@ end
 
 -- Send updated rig state to UI
 local function updateUI(rigId, state)
+    rigId = tostring(rigId)
     state = state or {}
     if currentRigId ~= rigId then
         return
@@ -162,6 +165,7 @@ end
 
 -- Open UI
 local function openRigPanel(rigId)
+    rigId = tostring(rigId)
     dbg('openRigPanel rigId=%s', tostring(rigId))
     -- Wait briefly for NUI to report ready; avoids locking player if NUI failed to load.
     if not nuiReady then
@@ -213,6 +217,8 @@ local function openRigPanel(rigId)
             fuelCost = Config.FuelCost,
             barrelSellPrice = Config.BarrelSellPrice,
             fuelToYield = Config.FuelToYield,
+            fuelItem = Config.FuelItem,
+            barrelItem = Config.BarrelItem,
             subtitle = 'Fuel → Produce → Collect → Sell',
             uiKicker = (Config.Ui and Config.Ui.mainKicker) or 'Field Terminal',
             uiTitle = (Config.Ui and Config.Ui.mainTitle) or JOB_NAME,
@@ -292,6 +298,7 @@ end)
 
 -- Server pushes updated rig state
 RegisterNetEvent('L3GiTOilRig:client:updateRigState', function(rigId, data)
+    rigId = tostring(rigId)
     dbg('updateRigState rigId=%s fuel=%s running=%s barrels=%s remaining=%s', tostring(rigId), tostring(data and data.fuelCans), tostring(data and data.isRunning), tostring(data and data.barrelsReady), tostring(data and data.remaining))
     local state = {
         fuelCans = data.fuelCans or 0,
@@ -594,7 +601,8 @@ RegisterNUICallback('buyDiesel', function(data, cb)
             config = {
                 currentFuel = currentFuel or 0,
                 fuelCost = Config.FuelCost or 0,
-                maxHold = 9
+                maxHold = Config.MaxFuelCansStored or 9,
+                fuelItem = Config.FuelItem
             }
         })
     end)
@@ -609,7 +617,8 @@ RegisterNUICallback('requestSupplierRefresh', function(_, cb)
         config = {
             currentFuel = currentFuel or 0,
             fuelCost = Config.FuelCost or 0,
-            maxHold = 9
+            maxHold = Config.MaxFuelCansStored or 9,
+            fuelItem = Config.FuelItem
         }
     })
 end)
@@ -629,7 +638,8 @@ RegisterNUICallback('sellBarrels', function(data, cb)
             action = 'updateBuyerUI',
             config = {
                 currentBarrels = currentBarrels or 0,
-                barrelPrice = Config.BarrelSellPrice or 0
+                barrelPrice = Config.BarrelSellPrice or 0,
+                barrelItem = Config.BarrelItem
             }
         })
     end)
@@ -650,7 +660,7 @@ end)
 RegisterNUICallback('fuelRig', function(data, cb)
     cb('ok')
 
-    local rigId = data.rigId
+    local rigId = tostring(data and data.rigId or '')
 
     dbg('NUI fuelRig rigId=%s', tostring(rigId))
 
@@ -686,15 +696,16 @@ end)
 
 RegisterNUICallback('startCycle', function(data, cb)
     cb('ok')
-    local rigId = (data and data.rigId) or currentRigId
+    local rigId = tostring((data and data.rigId) or currentRigId or '')
     dbg('NUI startCycle rigId=%s', tostring(rigId))
     TriggerServerEvent('L3GiTOilRig:server:startCycle', rigId)
 end)
 
 RegisterNUICallback('collectBarrel', function(data, cb)
     cb('ok')
-    dbg('NUI collectBarrel rigId=%s', tostring(data and data.rigId))
-    TriggerServerEvent('L3GiTOilRig:server:collectBarrel', data.rigId)
+    local rigId = tostring(data and data.rigId or '')
+    dbg('NUI collectBarrel rigId=%s', tostring(rigId))
+    TriggerServerEvent('L3GiTOilRig:server:collectBarrel', rigId)
 end)
 
 RegisterNUICallback('setRigName', function(data, cb)
@@ -727,18 +738,4 @@ RegisterNUICallback('setRigName', function(data, cb)
             })
         end
     end)
-end)
-
-RegisterNUICallback('modalResponse', function(data, cb)
-    cb('ok')
-
-    if data.modalId == 'buyFuel' and data.accepted then
-        TriggerServerEvent('L3GiTOilRig:server:buyDiesel')
-    end
-
-    if currentRigId == nil then
-        SetNuiFocus(false, false)
-    else
-        SetNuiFocus(true, true)
-    end
 end)

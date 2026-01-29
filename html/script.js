@@ -4,13 +4,12 @@ const RESOURCE_NAME = (typeof GetParentResourceName === "function")
 
 let currentRigId = null;
 let currentRigName = "";
-let currentModal = null;
 let lastRigData = null;
-let supplierConfig = { fuelCost: 0, currentFuel: 0, maxHold: 9 };
+let supplierConfig = { fuelCost: 0, currentFuel: 0, maxHold: 9, fuelItem: "" };
 let supplierBuyBusy = false;
 let supplierQty = 1;
 
-let buyerConfig = { barrelPrice: 0, currentBarrels: 0 };
+let buyerConfig = { barrelPrice: 0, currentBarrels: 0, barrelItem: "" };
 let buyerSellBusy = false;
 let buyerQty = 1;
 
@@ -114,7 +113,7 @@ function showSupplierUI(cfg) {
     const p2 = $("shop-fuel-price");
     if (p2) p2.textContent = priceText;
 
-    setOxInventoryItemImage($("shop-item-img"), "rig_fuel");
+    setOxInventoryItemImage($("shop-item-img"), supplierConfig.fuelItem || "rig_fuel");
 
     const infoView = $("supplier-info-view");
     const shopView = $("supplier-shop-view");
@@ -152,7 +151,7 @@ function showBuyerUI(cfg) {
     const unitEl = $("buyer-unit-price");
     if (unitEl) unitEl.textContent = unitText;
 
-    setOxInventoryItemImage($("buyer-item-img"), "oil_barrel");
+    setOxInventoryItemImage($("buyer-item-img"), buyerConfig.barrelItem || "oil_barrel");
 
     buyerQty = 1;
     updateBuyerTotals();
@@ -203,7 +202,7 @@ function updateBuyerTotals() {
     const sellBtn = $("btn-buyer-sell");
     if (sellBtn) {
         sellBtn.disabled = false;
-        sellBtn.textContent = "Purchase";
+        sellBtn.textContent = "Sell";
     }
 
     const minus = $("btn-buyer-qty-minus");
@@ -299,22 +298,6 @@ function closeNamePopup() {
     const popup = $("name-popup");
     if (!popup) return;
     popup.classList.add("hidden");
-}
-
-function openModal(payload) {
-    currentModal = payload;
-    $("modal-title").textContent = payload.title || "Confirmation";
-    $("modal-message").textContent = payload.message || "";
-
-    $("modal-confirm-label").textContent = payload.confirmLabel || "Confirm";
-    $("modal-cancel-label").textContent = payload.cancelLabel || "Cancel";
-
-    $("modal").classList.remove("hidden");
-}
-
-function closeModal() {
-    $("modal").classList.add("hidden");
-    currentModal = null;
 }
 
 function createNotification({ title, message, type = "info", duration = 4000 }) {
@@ -508,6 +491,9 @@ window.addEventListener("message", (event) => {
                 if (rigConfig.infoNote) setText("rig-info-text", rigConfig.infoNote);
             }
 
+            // Update gauge item image based on configured barrel item.
+            setOxInventoryItemImage($("gauge-barrel-img"), rigConfig.barrelItem || "oil_barrel");
+
             if (typeof msg.rigName === "string") {
                 setRigNameUI(msg.rigName);
             }
@@ -526,9 +512,6 @@ window.addEventListener("message", (event) => {
             if (typeof msg.rigName === "string") setRigNameUI(msg.rigName);
             break;
         }
-        case "openModal":
-            openModal(msg);
-            break;
         case "notify":
             createNotification({
                 title: msg.title,
@@ -581,6 +564,7 @@ window.addEventListener("DOMContentLoaded", () => {
     // Let Lua know NUI loaded successfully.
     postNui("uiReady", {});
 
+    // Default gauge image until we receive showRigUI config.
     setOxInventoryItemImage($("gauge-barrel-img"), "oil_barrel");
 
     $("btn-close").addEventListener("click", () => postNui("closeUI", {}));
@@ -706,34 +690,8 @@ window.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    $("modal-confirm").addEventListener("click", () => {
-        if (!currentModal) return closeModal();
-        postNui("modalResponse", { modalId: currentModal.modalId, accepted: true });
-        closeModal();
-    });
-
-    $("modal-cancel").addEventListener("click", () => {
-        if (!currentModal) return closeModal();
-        postNui("modalResponse", { modalId: currentModal.modalId, accepted: false });
-        closeModal();
-    });
-
-    $("modal-backdrop").addEventListener("click", () => {
-        // Close modal without accepting; Lua will also release focus on modalResponse.
-        if (!currentModal) return closeModal();
-        postNui("modalResponse", { modalId: currentModal.modalId, accepted: false });
-        closeModal();
-    });
-
     document.addEventListener("keydown", (e) => {
         if (e.key !== "Escape") return;
-
-        // ESC closes modal first; otherwise closes UI.
-        if (!$("modal").classList.contains("hidden")) {
-            if (currentModal) postNui("modalResponse", { modalId: currentModal.modalId, accepted: false });
-            closeModal();
-            return;
-        }
 
         // ESC closes rename popup next.
         if (!$("name-popup").classList.contains("hidden")) {
