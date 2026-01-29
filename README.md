@@ -83,7 +83,3 @@ Set `Config.Debug = true` to print extra debug logs (client + server).
 - No persistence:
   - ensure `oxmysql` starts before this resource
   - check your SQL permissions
-
-## Extra Docs
-- Install steps: `INSTALLATION.md`
-- Script overview (plain text): `explanation.txt`
